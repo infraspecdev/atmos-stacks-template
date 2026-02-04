@@ -1,0 +1,25 @@
+{
+  "$id": "sample-component",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sample Component",
+  "description": "JSON Schema for the 'sample-component' Atmos component.",
+  "type": "object",
+  "properties": {
+    "vars": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "description": "Environment name",
+          "enum": ["dev", "staging", "prod"]
+        },
+        "aws_region": {
+          "type": "string",
+          "description": "AWS region"
+        }
+      },
+      "additionalProperties": true,
+      "required": []
+    }
+  }
+}

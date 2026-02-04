@@ -1,0 +1,40 @@
+name: Pre-commit Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+
+      - name: Setup Atmos
+        uses: cloudposse/github-action-setup-atmos@v2
+        with:
+          version: 1.204.0
+          install-wrapper: false
+
+      - name: Configure Git for Private Repo Access
+        env:
+          GITHUB_TOKEN: ${{ secrets.COMPONENTS_ACCESS_TOKEN }}
+        run: |
+          # Configure Git to use the token for private component repos
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Run pre-commit checks on pull requests
+        uses: pre-commit/action@v3.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          extra_args: --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.event.pull_request.head.sha }}
+
+      - name: Run pre-commit checks on direct pushes to main
+        if: github.event_name == 'push'
+        uses: pre-commit/action@v3.0.1

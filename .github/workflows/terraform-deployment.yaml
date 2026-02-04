@@ -1,0 +1,146 @@
+name: Atmos Terraform Deployment
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "stacks/**/*.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "stacks/**/*.yaml"
+
+jobs:
+  extract-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get changed stack files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: stacks/**/*.yaml
+          files_ignore: stacks/globals.yaml
+          json: true
+          quotepath: false
+          escape_json: false
+
+      - name: Build matrix from changed stack files
+        id: set-matrix
+        run: |
+          matrix="[]"
+          changed_files='${{ steps.changed-files.outputs.all_changed_files }}'
+
+          echo "Changed files: $changed_files"
+
+          # Process only the changed stack files
+          for stack_file in $(echo "$changed_files" | jq -r '.[]'); do
+            if [ -f "$stack_file" ]; then
+              # Extract stage from YAML
+              stage=$(grep "stage:" "$stack_file" | head -1 | awk '{print $2}')
+
+              # Extract environment from YAML
+              environment=$(grep "environment:" "$stack_file" | head -1 | awk '{print $2}')
+
+              # Extract component name (line after "terraform:")
+              component=$(grep -A 1 "terraform:" "$stack_file" | tail -1 | awk '{print $1}' | sed 's/:$//')
+
+              if [ -n "$stage" ] && [ -n "$component" ] && [ -n "$environment" ]; then
+                matrix=$(echo "$matrix" | jq -c ". + [{\"stage\":\"$stage\",\"component\":\"$component\",\"environment\":\"$environment\",\"stack_file\":\"$stack_file\"}]")
+                echo "  Added: $component in $stage (env: $environment) from $stack_file"
+              fi
+            fi
+          done
+
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "::notice title=Stacks to deploy::$(echo "$matrix" | jq -r 'length') stack(s)"
+
+  terraform:
+    needs: extract-changes
+    if: needs.extract-changes.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.extract-changes.outputs.matrix) }}
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set Role ARN for AWS configuration
+        id: role-arn
+        run: ./.github/scripts/set-gh-role.sh "${{ matrix.environment }}"
+        env:
+          STAGING_GH_ROLE: ${{ secrets.STAGING_GH_ROLE }}
+          PROD_GH_ROLE: ${{ secrets.PROD_GH_ROLE }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.role-arn.outputs.role_arn }}
+          aws-region: ${{ matrix.region || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.0"
+
+      - name: Setup Atmos
+        uses: cloudposse/github-action-setup-atmos@v2
+        with:
+          version: 1.204.0
+          install-wrapper: false
+
+      - name: Configure Git for Private Repo Access
+        env:
+          GITHUB_TOKEN: ${{ secrets.COMPONENTS_ACCESS_TOKEN }}
+        run: |
+          # Configure Git to use the token for private component repos
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Atmos Terraform Validate
+        id: validate
+        run: atmos validate component ${{ matrix.component }} -s ${{ matrix.stage }}
+
+      - name: Plan Terraform
+        id: plan
+        timeout-minutes: 10
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          {
+            echo 'PLAN_OUTPUT<<EOF'
+            atmos terraform plan ${{ matrix.component }} -s ${{ matrix.stage }} -- -input=false -no-color
+            echo EOF
+          } >> $GITHUB_ENV
+
+      - name: Post comment For Changes
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'success'
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            ### ${{ matrix.stage }}/${{ matrix.component }} Changes
+            **Stack File**: `${{ matrix.stack_file }}`
+            ```diff
+            ${{ env.PLAN_OUTPUT }}
+            ```
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Apply
+        id: apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: atmos terraform apply ${{ matrix.component }} -s ${{ matrix.stage }} -auto-approve

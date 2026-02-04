@@ -1,0 +1,14 @@
+components:
+  terraform:
+    base_path: "components/terraform"
+    auto_generate_backend_file: true
+
+stacks:
+  base_path: "stacks"
+  included_paths:
+    - "**/*.yaml"
+  name_pattern: "{stage}"
+
+schemas:
+  jsonschema:
+    base_path: "stacks/schemas/jsonschema"

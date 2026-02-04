@@ -1,0 +1,116 @@
+name: Manual Stack Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: 'Select stack to deploy (stage name)'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+        default: 'plan'
+
+jobs:
+  manual-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify main branch
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::This workflow can only be run from the main branch"
+            exit 1
+          fi
+          echo "::notice::Running on main branch"
+
+      - name: Find component for stack
+        id: parse-stack
+        run: |
+          # The input is the stage name
+          STAGE="${{ inputs.stack }}"
+
+          # Find the stack file that has this stage
+          STACK_FILE=$(find stacks -type f -name "*.yaml" -not -name "globals.yaml" -exec grep -l "stage: $STAGE" {} \; | head -1)
+
+          if [ -z "$STACK_FILE" ]; then
+            echo "::error::No stack file found for stage: $STAGE"
+            exit 1
+          fi
+
+          # Extract component name from the stack file
+          COMPONENT=$(grep -A 1 "terraform:" "$STACK_FILE" | tail -1 | awk '{print $1}' | sed 's/:$//')
+
+          # Extract environment from the stack file
+          ENVIRONMENT=$(grep "environment:" "$STACK_FILE" | head -1 | awk '{print $2}')
+
+          echo "component=$COMPONENT" >> $GITHUB_OUTPUT
+          echo "stage=$STAGE" >> $GITHUB_OUTPUT
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "::notice::Found component '$COMPONENT' for stage '$STAGE' (env: $ENVIRONMENT) in $STACK_FILE"
+
+      - name: Set Role ARN for AWS configuration
+        id: role-arn
+        run: ./.github/scripts/set-gh-role.sh "${{ steps.parse-stack.outputs.environment }}"
+        env:
+          STAGING_GH_ROLE: ${{ secrets.STAGING_GH_ROLE }}
+          PROD_GH_ROLE: ${{ secrets.PROD_GH_ROLE }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.role-arn.outputs.role_arn }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.0"
+
+      - name: Setup Atmos
+        uses: cloudposse/github-action-setup-atmos@v2
+        with:
+          version: 1.204.0
+          install-wrapper: false
+
+      - name: Configure Git for Private Repo Access
+        env:
+          GITHUB_TOKEN: ${{ secrets.COMPONENTS_ACCESS_TOKEN }}
+        run: |
+          # Configure Git to use the token for private component repos
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Atmos Terraform Validate
+        id: validate
+        run: atmos validate component ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }}
+
+      - name: Terraform Plan
+        id: plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: atmos terraform plan ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }} -- -input=false
+
+      - name: Terraform Apply
+        id: apply
+        if: inputs.action == 'apply'
+        run: |
+          echo "::warning::Applying changes to ${{ inputs.stack }}..."
+          atmos terraform apply ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }} -auto-approve
+
+      - name: Terraform Destroy
+        id: destroy
+        if: inputs.action == 'destroy'
+        run: |
+          echo "::warning::Destroying resources in ${{ inputs.stack }}..."
+          atmos terraform destroy ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }} -auto-approve

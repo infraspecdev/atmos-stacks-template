@@ -1,0 +1,30 @@
+import:
+  - ../globals
+
+vars:
+  stage: <COMPONENT_NAME>-staging
+  aws_region: <AWS_REGION>
+  environment: staging
+
+components:
+  terraform:
+    <COMPONENT_NAME>:
+      settings:
+        validation:
+          validate-<COMPONENT_NAME>:
+            schema_type: jsonschema
+            schema_path: "staging/<COMPONENT_NAME>.json"
+            description: Validate <COMPONENT_NAME> component variables
+      source:
+        uri: github.com/<ORG_NAME>/terraform-infrastructure-components.git//components/terraform/<COMPONENT_NAME>
+        version: <VERSION>
+      backend_type: s3
+      backend:
+        s3:
+          bucket: "<S3_BACKEND_BUCKET>"
+          key: "terraform.tfstate"
+          region: "<AWS_REGION>"
+          encrypt: true
+      vars:
+        # Add component-specific variables here
+        example_var: "example_value"

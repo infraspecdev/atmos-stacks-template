@@ -1,0 +1,5 @@
+vars:
+  # Common tags for all resources across all environments
+  tags:
+    ManagedBy: Terraform
+    Repository: <REPOSITORY_NAME>
