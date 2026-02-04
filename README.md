@@ -1,6 +1,6 @@
 # Atmos Stacks Template
 
-This template is for managing infrastructure deployments using [Atmos](https://atmos.tools/) with Terraform. It provides a structured approach to defining environment-specific stack configurations that reference versioned components.
+This template is for managing infrastructure deployments using Atmos with Terraform. It provide structured approach to defining environment specific stack configurations that reference versioned components.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ This template is for managing infrastructure deployments using [Atmos](https://a
    cd <REPO_NAME>
    ```
 
-2. **Update `stacks/globals.yaml`** with your organization's common tags.
+2. **Update `stacks/globals.yaml`** with common tags accross all stacks.
 
 3. **Create a stack file** under `stacks/<environment>/` (e.g., `stacks/staging/my-component.yaml`). Use `stacks/staging/sample-component.yaml` as a reference.
 
@@ -100,8 +100,8 @@ components:
 
 | Workflow | Trigger | Description |
 |---|---|---|
-| `terraform-deployment.yaml` | PR / Push to `main` on `stacks/**` | Auto-detects changed stacks, runs plan on PR, apply on merge |
-| `manual-terraform.yaml` | Manual dispatch | Plan, apply, or destroy a specific stack |
+| `terraform-deployment.yaml` | PR / Push to `main` on `stacks/**` | Detects changed stacks, run plan on PR, apply after merge |
+| `manual-terraform.yaml` | Manual trigger | Plan, apply, or destroy a specific stack |
 | `pre-commit-checks.yaml` | PR / Push to `main` | Runs pre-commit hooks (YAML lint, atmos validate) |
 
 ## Required GitHub Secrets
