@@ -110,4 +110,4 @@ components:
 |---|---|
 | `STAGING_GH_ROLE` | AWS IAM Role ARN for staging deployments |
 | `PROD_GH_ROLE` | AWS IAM Role ARN for production deployments |
-| `COMPONENTS_ACCESS_TOKEN` | GitHub PAT for accessing private component repos |
+| `COMPONENTS_ACCESS_TOKEN` | GitHub personal access token for accessing private component repos |
