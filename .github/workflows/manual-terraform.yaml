@@ -106,4 +106,3 @@ jobs:
         run: |
           echo "::warning::Applying changes to ${{ inputs.stack }}..."
           atmos terraform apply ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }} -auto-approve
-
