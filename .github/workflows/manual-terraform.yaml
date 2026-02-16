@@ -14,7 +14,6 @@ on:
         options:
           - plan
           - apply
-          - destroy
         default: 'plan'
 
 jobs:
@@ -108,9 +107,3 @@ jobs:
           echo "::warning::Applying changes to ${{ inputs.stack }}..."
           atmos terraform apply ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }} -auto-approve
 
-      - name: Terraform Destroy
-        id: destroy
-        if: inputs.action == 'destroy'
-        run: |
-          echo "::warning::Destroying resources in ${{ inputs.stack }}..."
-          atmos terraform destroy ${{ steps.parse-stack.outputs.component }} -s ${{ steps.parse-stack.outputs.stage }} -auto-approve
